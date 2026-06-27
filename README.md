@@ -35,76 +35,47 @@
 
 ## 🚀 快速部署（Docker）
 
-### 方式一：docker-compose（推荐）
+### 第一步：克隆项目并构建镜像
+
+SSH 登录你的 NAS，执行：
 
 ```bash
-# 1. 克隆项目
 git clone https://github.com/yueyoue/navidrome-ai-playlist.git
 cd navidrome-ai-playlist
-
-# 2. 修改配置
-#    编辑 docker-compose.yml，修改以下内容：
-#    - NAVIDROME_URL: 你的 Navidrome 地址
-#    - NAVIDROME_USER: Navidrome 用户名
-#    - NAVIDROME_PASS: Navidrome 密码
-#    - LOGIN_PASSWORD: Web UI 访问密码
-
-# 3. 构建并启动
-docker-compose up -d --build
-
-# 4. 查看日志
-docker-compose logs -f
+docker build -t navidrome-ai-playlist .
 ```
 
-### 方式二：Docker 命令行
+等待构建完成（首次约 1-2 分钟），看到 `FINISHED` 表示成功。
+
+### 第二步：启动容器
 
 ```bash
-# 克隆项目
-git clone https://github.com/yueyoue/navidrome-ai-playlist.git
-cd navidrome-ai-playlist
-
-# 构建镜像
-docker build -t navidrome-ai-playlist .
-
-# 运行容器
 docker run -d \
   --name navidrome-ai-playlist \
   -p 8899:8899 \
-  -e NAVIDROME_URL=http://你的NAS地址:4533/ \
-  -e NAVIDROME_USER=你的用户名 \
-  -e NAVIDROME_PASS=你的密码 \
-  -e LOGIN_PASSWORD=*** \
+  -e NAVIDROME_URL=http://你的NAS局域网IP:4533/ \
+  -e NAVIDROME_USER=你的Navidrome用户名 \
+  -e NAVIDROME_PASS=你的Navidrome密码 \
+  -e LOGIN_PASSWORD=你想设置的Web访问密码 \
   --restart unless-stopped \
   navidrome-ai-playlist
 ```
 
-### 方式三：直接运行（不用 Docker）
+> ⚠️ 把上面的中文替换成你自己的实际值。`NAVIDROME_URL` 建议用局域网 IP，速度更快。
 
-```bash
-# 需要 Python 3.9+
-git clone https://github.com/yueyoue/navidrome-ai-playlist.git
-cd navidrome-ai-playlist
-pip install -r requirements.txt
+### 第三步：访问
 
-# 修改 config.py 中的配置
+浏览器打开 `http://你的NAS地址:8899`，输入 `LOGIN_PASSWORD` 即可登录。
 
-# 启动
-python app.py
-```
-
-## ⚙️ 配置说明
-
-编辑 `docker-compose.yml` 中的环境变量：
+## ⚙️ 环境变量说明
 
 | 环境变量 | 说明 | 示例 |
 |---------|------|------|
-| `NAVIDROME_URL` | Navidrome 服务器地址 | `http://192.168.1.100:4533/` |
+| `NAVIDROME_URL` | Navidrome 服务器地址（末尾加 `/`） | `http://192.168.1.100:4533/` |
 | `NAVIDROME_USER` | Navidrome 用户名 | `admin` |
 | `NAVIDROME_PASS` | Navidrome 密码 | `your_password` |
 | `LOGIN_PASSWORD` | Web UI 访问密码 | `your_web_password` |
-| `PORT` | 服务端口（可选） | `8899` |
-
-> 💡 **建议**：`NAVIDROME_URL` 使用局域网地址（如 `http://192.168.1.x:4533/`），速度更快。
+| `PORT` | 服务端口（可选，默认 8899） | `8899` |
 
 ## 🎯 使用方法
 
@@ -125,18 +96,26 @@ python app.py
 ## 🔧 常用命令
 
 ```bash
+# 查看容器状态
+docker ps | grep navidrome-ai
+
 # 查看日志
-docker-compose logs -f
+docker logs -f navidrome-ai-playlist
 
 # 重启服务
-docker-compose restart
+docker restart navidrome-ai-playlist
 
-# 停止服务
-docker-compose down
+# 停止并删除容器
+docker stop navidrome-ai-playlist
+docker rm navidrome-ai-playlist
 
-# 更新代码后重新构建
+# 更新代码后重新部署
+cd ~/navidrome-ai-playlist
 git pull
-docker-compose up -d --build
+docker build -t navidrome-ai-playlist .
+docker stop navidrome-ai-playlist
+docker rm navidrome-ai-playlist
+# 然后重新执行上面的 docker run 命令
 ```
 
 ## 📁 项目结构
@@ -164,14 +143,14 @@ navidrome-ai-playlist/
 - **搜索引擎**：酷我、网易云、QQ音乐、酷狗
 - **音乐服务器**：Navidrome (Subsonic API)
 - **封面生成**：Pillow
-- **部署**：Docker
+- **部署**：Docker（基础镜像使用华为云国内源，国内可正常拉取）
 
 ## ⚠️ 注意事项
 
 - 首次启动会后台加载歌曲库（曲库越大加载越慢）
 - 搜索结果取决于各音乐平台 API 的可用性
 - 匹配算法包含精确匹配和模糊匹配，但可能有遗漏
-- `docker-compose.yml` 中包含密码配置，请勿公开分享
+- 不要在 `docker-compose.yml` 或命令行中泄露你的密码配置
 
 ## 📄 License
 
