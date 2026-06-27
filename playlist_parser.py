@@ -46,7 +46,7 @@ def parse_playlist_url(url: str) -> Tuple[Optional[str], Optional[str]]:
         return ('qq', m.group(1))
 
     # 酷我音乐
-    m = re.search(r'kuwo\.cn/playlist/(\d+)', url)
+    m = re.search(r'kuwo\.cn/playlist(?:_detail)?/(\d+)', url)
     if m:
         return ('kuwo', m.group(1))
     m = re.search(r'kuwo\.cn.*?pid=(\d+)', url)
@@ -139,23 +139,35 @@ def fetch_qq_playlist(playlist_id: str) -> Tuple[str, List[Song]]:
 
 
 def fetch_kuwo_playlist(playlist_id: str) -> Tuple[str, List[Song]]:
-    """获取酷我音乐歌单"""
+    """获取酷我音乐歌单（从页面HTML解析）"""
     try:
-        url = "http://www.kuwo.cn/api/www/playlist/playListInfo"
-        params = {'pid': playlist_id, 'pn': 1, 'rn': 100, 'httpsStatus': 1}
-        resp = requests.get(url, headers={**HEADERS, 'Referer': 'http://www.kuwo.cn/'}, timeout=15)
-        data = resp.json()
-        playlist_data = data.get('data', {})
-        playlist_name = playlist_data.get('name', '酷我歌单')
-        music_list = playlist_data.get('musicList', [])
+        url = f'http://www.kuwo.cn/playlist_detail/{playlist_id}'
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        text = resp.text
 
+        # 从页面标题获取歌单名
+        title_match = re.search(r'<title>(.*?)</title>', text)
+        playlist_name = '酷我歌单'
+        if title_match:
+            raw_title = title_match.group(1)
+            name_parts = raw_title.split('_')
+            if name_parts:
+                playlist_name = name_parts[0].strip()
+
+        # 从HTML解析歌曲：每个歌曲项在 <li class="song_item"> 中
+        # 结构：<a title="歌名" href="/play_detail/ID">歌名</a>
+        #        <div class="song_artist"><span title="歌手">歌手</span></div>
         songs = []
-        for item in music_list:
-            title = re.sub(r'<[^>]+>', '', item.get('name', ''))
-            artist = re.sub(r'<[^>]+>', '', item.get('artist', ''))
-            album = item.get('album', '')
-            if title and artist:
-                songs.append(Song(title=title, artist=artist, album=album, source='酷我'))
+        for match in re.finditer(r'<a[^>]*title="([^"]+)"[^>]*href="/play_detail/(\d+)"[^>]*>', text):
+            song_name = match.group(1).strip()
+            # 获取链接后面的文本，查找 song_artist
+            after = text[match.end():match.end()+800]
+            artist_match = re.search(r'class="song_artist"[^>]*>.*?<span[^>]*title="([^"]+)"', after, re.DOTALL)
+            artist = artist_match.group(1).strip() if artist_match else ''
+            # 清理 HTML 实体
+            artist = artist.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+            if song_name and artist:
+                songs.append(Song(title=song_name, artist=artist, source='酷我'))
 
         logger.info(f"酷我歌单 '{playlist_name}': {len(songs)} 首歌曲")
         return (playlist_name, songs)
