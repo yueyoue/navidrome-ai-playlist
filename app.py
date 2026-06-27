@@ -20,6 +20,7 @@ import config
 from searchers import search_all, search_all_merged, Song
 from navidrome_client import NavidromeClient
 from cover_generator import generate_cover, THEME_COLORS
+from playlist_parser import fetch_playlist_from_url, parse_playlist_url
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -114,6 +115,9 @@ class CreatePlaylistRequest(BaseModel):
 class MatchRequest(BaseModel):
     query: str
     sources: list = []
+
+class PlaylistUrlRequest(BaseModel):
+    url: str
 
 @app.get("/api/status")
 async def api_status(request: Request):
@@ -247,6 +251,92 @@ async def api_match(req: MatchRequest, request: Request):
         "matched": matched,
         "matched_count": len(matched),
         "unmatched": unmatched[:50],  # 最多返回50个未匹配
+        "unmatched_count": len(unmatched),
+    }
+
+@app.post("/api/playlist/from-url")
+async def api_playlist_from_url(req: PlaylistUrlRequest, request: Request):
+    """从歌单链接获取歌曲并匹配曲库"""
+    require_auth(request)
+    if not req.url.strip():
+        raise HTTPException(400, "链接不能为空")
+
+    logger.info(f"解析歌单链接: {req.url}")
+
+    # 1. 从URL获取歌单歌曲
+    try:
+        playlist_name, url_songs = fetch_playlist_from_url(req.url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"获取歌单失败: {e}")
+        raise HTTPException(500, f"获取歌单失败: {e}")
+
+    if not url_songs:
+        raise HTTPException(400, "未能从该链接获取到歌曲")
+
+    # 2. 去重
+    seen = set()
+    unique_songs = []
+    for song in url_songs:
+        key = song.match_key
+        if key not in seen:
+            seen.add(key)
+            unique_songs.append(song)
+
+    # 3. 与 Navidrome 库匹配
+    import re
+    library = _get_library()
+    lib_index = {}
+    for ls in library:
+        key = ls.match_key
+        if key not in lib_index:
+            lib_index[key] = ls
+
+    matched = []
+    unmatched = []
+    for song in unique_songs:
+        key = song.match_key
+        if key in lib_index:
+            ns = lib_index[key]
+            matched.append({
+                "title": ns.title,
+                "artist": ns.artist,
+                "album": ns.album,
+                "id": ns.id,
+                "source": song.source,
+            })
+        else:
+            # 模糊匹配
+            found = False
+            title_clean = re.sub(r'[\s\-\(\)（）]', '', song.title.lower())
+            for lk, ls in lib_index.items():
+                lib_title = re.sub(r'[\s\-\(\)（）]', '', ls.title.lower())
+                if title_clean and lib_title and (title_clean in lib_title or lib_title in title_clean):
+                    if len(title_clean) >= 2:
+                        matched.append({
+                            "title": ls.title,
+                            "artist": ls.artist,
+                            "album": ls.album,
+                            "id": ls.id,
+                            "source": f"{song.source}(模糊)",
+                        })
+                        found = True
+                        break
+            if not found:
+                unmatched.append({
+                    "title": song.title,
+                    "artist": song.artist,
+                    "source": song.source,
+                })
+
+    return {
+        "playlist_name": playlist_name,
+        "source": url_songs[0].source if url_songs else "unknown",
+        "search_total": len(unique_songs),
+        "matched": matched,
+        "matched_count": len(matched),
+        "unmatched": unmatched[:50],
         "unmatched_count": len(unmatched),
     }
 

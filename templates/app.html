@@ -90,6 +90,29 @@
                 <input type="checkbox" class="source-check rounded" value="酷狗" checked> 酷狗
             </label>
         </div>
+
+        <!-- 歌单链接导入 -->
+        <div class="mt-4 pt-4 border-t border-white/10">
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex-1">
+                    <input
+                        type="text"
+                        id="playlistUrl"
+                        placeholder="粘贴歌单链接（支持网易云/QQ音乐/酷我/酷狗的歌单URL）"
+                        class="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50"
+                        onkeydown="if(event.key==='Enter') importFromUrl()"
+                    >
+                </div>
+                <button
+                    onclick="importFromUrl()"
+                    id="importBtn"
+                    class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition duration-200 whitespace-nowrap"
+                >
+                    📋 导入歌单
+                </button>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">支持格式：music.163.com、y.qq.com、kuwo.cn、kugou.com 的歌单链接</p>
+        </div>
     </div>
 
     <!-- 加载中 -->
@@ -498,6 +521,63 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // 从歌单链接导入
+        async function importFromUrl() {
+            const url = document.getElementById('playlistUrl').value.trim();
+            if (!url) { alert('请粘贴歌单链接'); return; }
+
+            const btn = document.getElementById('importBtn');
+            btn.disabled = true;
+            btn.textContent = '解析中...';
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('results').classList.add('hidden');
+
+            try {
+                const resp = await fetch('/api/playlist/from-url', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url}),
+                });
+                const data = await resp.json();
+
+                if (resp.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                if (resp.status === 400) {
+                    alert(data.detail || '链接格式不支持');
+                    return;
+                }
+
+                // 设置歌单名称
+                const playlistName = data.playlist_name || '导入歌单';
+                document.getElementById('playlistName').value = playlistName;
+                document.getElementById('searchInput').value = playlistName;
+
+                // 显示结果（复用 displayResults 格式）
+                displayResults({
+                    query: playlistName,
+                    source_stats: {[data.source]: data.search_total},
+                    search_total: data.search_total,
+                    matched: data.matched,
+                    matched_count: data.matched_count,
+                    unmatched: data.unmatched,
+                    unmatched_count: data.unmatched_count,
+                }, playlistName);
+
+                refreshCoverPreview();
+
+            } catch(e) {
+                alert('导入失败: ' + e.message);
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+                btn.disabled = false;
+                btn.textContent = '📋 导入歌单';
+            }
         }
     </script>
 </body>
